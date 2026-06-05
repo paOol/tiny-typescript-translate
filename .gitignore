@@ -80,8 +80,13 @@ out
 
 # Nuxt.js build / generate output
 .nuxt
-dist
 .output
+
+# NOTE: dist/ is intentionally committed so this package is installable directly
+# from a git/GitHub URL. yarn classic does not run `prepare` for git deps, so the
+# compiled output must already be present. Rebuild (`npm run build`) and commit
+# dist/ after changing src/. (When publishing to npm instead, dist is built by
+# prepublishOnly and this no longer matters.)
 
 # Gatsby files
 .cache/
