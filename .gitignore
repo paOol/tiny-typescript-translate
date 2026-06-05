@@ -144,3 +144,6 @@ vite.config.ts.timestamp-*
 
 # Claude Code agent scaffolding (plans, local state)
 .claude/
+
+# npm auth token — must never be committed (keep in ~/.npmrc instead)
+.npmrc
