@@ -21,6 +21,12 @@
  * - `es-stripped-sentence` holds full Spanish sentences with their accents
  *   removed; these still carry enough Spanish function words to be detected
  *   today, so they guard against breaking the folded-function-word path.
+ * - `en-slang`, `en-gaming`, `en-short-fragment` capture English internet slang,
+ *   gaming terms and short common-English fragments that a Latin-script detector
+ *   can misread as Spanish (the trigram tiebreak leans Spanish on English chat
+ *   shapes; `sus`/`no cap` collide with Spanish stopwords). They are the
+ *   regression gate for the slang false-positive guard — every entry must
+ *   detect English (zero English→Spanish flips).
  *
  * The corpus is intentionally deterministic (no randomness, no dates) so the
  * baseline accuracy report is reproducible across runs and machines.
@@ -35,7 +41,14 @@ export type CorpusKind =
   | 'es-accentfree-novel'
   | 'es-trigram-novel'
   | 'en-control'
-  | 'es-stripped-sentence';
+  | 'es-stripped-sentence'
+  // English false-positive guards: internet slang, gaming terms, and short
+  // common-English fragments that a Latin-script detector can misread as
+  // Spanish. All `expected: 'en'`; every one of these is a regression gate
+  // against English→Spanish flips. (Added with the slang false-positive guard.)
+  | 'en-slang'
+  | 'en-gaming'
+  | 'en-short-fragment';
 
 /** A single labeled fragment in the detection corpus. */
 export interface CorpusEntry {
@@ -161,4 +174,60 @@ export const CORPUS: ReadonlyArray<CorpusEntry> = [
     expected: 'es',
     kind: 'es-stripped-sentence',
   },
+
+  // --- en-slang: internet/text slang & chat abbreviations. All previously at
+  //     risk of (or actually) flipping to Spanish via the trigram tiebreak or a
+  //     Spanish-stopword collision (`sus`, `imo`, `vibe`, `no cap`…). Must be en.
+  { text: 'lol', expected: 'en', kind: 'en-slang' },
+  { text: 'lmao', expected: 'en', kind: 'en-slang' },
+  { text: 'tbh', expected: 'en', kind: 'en-slang' },
+  { text: 'ngl', expected: 'en', kind: 'en-slang' },
+  { text: 'imo', expected: 'en', kind: 'en-slang' }, // was es (trigram)
+  { text: 'sus', expected: 'en', kind: 'en-slang' }, // was es=1.0 (Spanish stopword)
+  { text: 'periodt', expected: 'en', kind: 'en-slang' }, // was es (trigram)
+  { text: 'vibe', expected: 'en', kind: 'en-slang' }, // was es (trigram)
+  { text: 'vibes', expected: 'en', kind: 'en-slang' }, // was es (trigram)
+  { text: 'bruh', expected: 'en', kind: 'en-slang' },
+  { text: 'bro', expected: 'en', kind: 'en-slang' }, // was es (trigram)
+  { text: 'based', expected: 'en', kind: 'en-slang' },
+  { text: 'cringe', expected: 'en', kind: 'en-slang' },
+  { text: 'deadass', expected: 'en', kind: 'en-slang' },
+  { text: 'sheesh', expected: 'en', kind: 'en-slang' },
+
+  // --- en-gaming: gaming terms & callouts. `ez`, `gg ez`, `ggez`, `camp`,
+  //     `meta` all previously flipped to Spanish. Must be en. ---
+  { text: 'gg', expected: 'en', kind: 'en-gaming' },
+  { text: 'ez', expected: 'en', kind: 'en-gaming' }, // was es (trigram)
+  { text: 'gg ez', expected: 'en', kind: 'en-gaming' }, // was es (trigram)
+  { text: 'ggez', expected: 'en', kind: 'en-gaming' }, // was es (trigram)
+  { text: 'noob', expected: 'en', kind: 'en-gaming' },
+  { text: 'pwned', expected: 'en', kind: 'en-gaming' },
+  { text: 'clutch', expected: 'en', kind: 'en-gaming' },
+  { text: 'camp', expected: 'en', kind: 'en-gaming' }, // was es (trigram)
+  { text: 'meta', expected: 'en', kind: 'en-gaming' }, // was es (trigram)
+  { text: 'nerf', expected: 'en', kind: 'en-gaming' },
+  { text: 'tryhard', expected: 'en', kind: 'en-gaming' },
+  { text: 'headshot', expected: 'en', kind: 'en-gaming' },
+  { text: 'gg wp', expected: 'en', kind: 'en-gaming' },
+  { text: 'mid diff', expected: 'en', kind: 'en-gaming' },
+  { text: 'jungle diff', expected: 'en', kind: 'en-gaming' },
+
+  // --- en-short-fragment: short common-English phrases (incl. the gaming-meme
+  //     phrases that read like English). `no cap` and `side quest` previously
+  //     flipped to Spanish. Must be en. ---
+  { text: 'no cap', expected: 'en', kind: 'en-short-fragment' }, // was es (tie→trigram)
+  { text: 'side quest', expected: 'en', kind: 'en-short-fragment' }, // was es (trigram)
+  { text: 'sus imposter', expected: 'en', kind: 'en-short-fragment' }, // was es (sus stopword)
+  { text: 'big mood', expected: 'en', kind: 'en-short-fragment' },
+  { text: 'my bad', expected: 'en', kind: 'en-short-fragment' },
+  { text: 'all good', expected: 'en', kind: 'en-short-fragment' },
+  { text: 'so true', expected: 'en', kind: 'en-short-fragment' },
+  { text: 'real talk', expected: 'en', kind: 'en-short-fragment' },
+  { text: 'main character', expected: 'en', kind: 'en-short-fragment' },
+  { text: 'touch grass', expected: 'en', kind: 'en-short-fragment' },
+  { text: 'let him cook', expected: 'en', kind: 'en-short-fragment' },
+  { text: 'skill issue', expected: 'en', kind: 'en-short-fragment' },
+  { text: 'hits different', expected: 'en', kind: 'en-short-fragment' },
+  { text: 'say less', expected: 'en', kind: 'en-short-fragment' },
+  { text: 'on god', expected: 'en', kind: 'en-short-fragment' },
 ];

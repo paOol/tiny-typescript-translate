@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   ENGLISH_STOPWORDS,
+  ENGLISH_COLLOQUIAL_FOLDED,
   SPANISH_STOPWORDS_FOLDED,
   SPANISH_CONTENT_FOLDED,
 } from '../src/detect-data.js';
@@ -41,5 +42,43 @@ describe('detect-data folded sets', () => {
     expect(SPANISH_STOPWORDS_FOLDED.has('mas')).toBe(true);
     expect(SPANISH_STOPWORDS_FOLDED.has('esta')).toBe(true);
     expect(SPANISH_STOPWORDS_FOLDED.has('que')).toBe(true);
+  });
+});
+
+describe('ENGLISH_COLLOQUIAL_FOLDED curation', () => {
+  // The single intentional overlap with a Spanish stopword: bare `sus` is
+  // overwhelmingly English/gaming slang; Spanish `sus` never stands alone.
+  const ALLOWED_SPANISH_OVERLAP = new Set(['sus']);
+
+  it('stores every entry in folded (ASCII, lowercase) form', () => {
+    for (const word of ENGLISH_COLLOQUIAL_FOLDED) {
+      expect(word, `"${word}" is not folded ASCII`).toMatch(/^[a-z]+$/);
+    }
+  });
+
+  it('never collides with a Spanish CONTENT word (would turn Spanish English)', () => {
+    for (const word of ENGLISH_COLLOQUIAL_FOLDED) {
+      expect(
+        SPANISH_CONTENT_FOLDED.has(word),
+        `"${word}" is also a Spanish content word`,
+      ).toBe(false);
+    }
+  });
+
+  it('overlaps Spanish STOPWORDS only on the documented exception (sus)', () => {
+    for (const word of ENGLISH_COLLOQUIAL_FOLDED) {
+      if (SPANISH_STOPWORDS_FOLDED.has(word)) {
+        expect(
+          ALLOWED_SPANISH_OVERLAP.has(word),
+          `"${word}" is a Spanish stopword and not a documented exception`,
+        ).toBe(true);
+      }
+    }
+  });
+
+  it('contains the expected slang / gaming / fragment members', () => {
+    for (const word of ['gg', 'ez', 'imo', 'sus', 'vibe', 'side', 'quest']) {
+      expect(ENGLISH_COLLOQUIAL_FOLDED.has(word), `missing "${word}"`).toBe(true);
+    }
   });
 });

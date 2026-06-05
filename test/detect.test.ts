@@ -100,6 +100,9 @@ describe('accent-free fragments', () => {
     'es-trigram-novel',
     'en-control',
     'es-stripped-sentence',
+    'en-slang',
+    'en-gaming',
+    'en-short-fragment',
   ];
 
   const entriesOfKind = (kind: CorpusKind): CorpusEntry[] =>
@@ -121,6 +124,9 @@ describe('accent-free fragments', () => {
       'es-trigram-novel': { correct: 0, total: 0 },
       'en-control': { correct: 0, total: 0 },
       'es-stripped-sentence': { correct: 0, total: 0 },
+      'en-slang': { correct: 0, total: 0 },
+      'en-gaming': { correct: 0, total: 0 },
+      'en-short-fragment': { correct: 0, total: 0 },
     };
 
     for (const entry of CORPUS) {
@@ -301,6 +307,56 @@ describe('trigram tiebreak', () => {
     ];
     for (const text of fragments) {
       expect(detectLanguage(text).language).toBe('es');
+    }
+  });
+});
+
+describe('slang false-positive guard', () => {
+  const SLANG_KINDS = ['en-slang', 'en-gaming', 'en-short-fragment'] as const;
+
+  const slangEntries = CORPUS.filter((e) =>
+    (SLANG_KINDS as readonly string[]).includes(e.kind),
+  );
+
+  // The hard gate: ZERO English→Spanish flips on any internet-slang, gaming, or
+  // short-common-English fragment. Each is the exact failure the guard targets.
+  it('detects every slang / gaming / short-fragment entry as English', () => {
+    expect(slangEntries.length).toBeGreaterThanOrEqual(30);
+    const flips = slangEntries.filter(
+      (e) => detectLanguage(e.text).language !== 'en',
+    );
+    expect(
+      flips.map((f) => f.text),
+      `English→Spanish flips on slang: ${flips.map((f) => f.text).join(', ')}`,
+    ).toEqual([]);
+  });
+
+  // The exact terms that flipped to Spanish in the pre-guard probe. They cover
+  // both failure mechanisms: the trigram tiebreak (`imo`, `vibe`, `side quest`…)
+  // and a Spanish-stopword collision (`sus`, `no cap`, `sus imposter`).
+  it('fixes every former false positive from the baseline probe', () => {
+    const formerFalsePositives = [
+      'imo', 'periodt', 'nocap', 'sus', 'vibe', 'vibes', 'ez', 'ggez',
+      'gg ez', 'camp', 'meta', 'bro', 'no cap', 'side quest', 'sus imposter',
+    ];
+    for (const text of formerFalsePositives) {
+      expect(detectLanguage(text).language, `"${text}"`).toBe('en');
+    }
+  });
+
+  // `sus` is the only entry that previously scored a full es=1.0 via a Spanish
+  // stopword; the decisive English colloquial weight must dominate it.
+  it('overrides the Spanish "sus" stopword with the colloquial signal', () => {
+    const r = detectLanguage('sus');
+    expect(r.language).toBe('en');
+    expect(r.scores.en).toBeGreaterThan(r.scores.es);
+  });
+
+  // Guard must NOT touch genuine out-of-lexicon Spanish (≥10 letters, no k/w):
+  // the es-trigram-novel path still flips to Spanish.
+  it('still detects genuine out-of-lexicon Spanish fragments as Spanish', () => {
+    for (const text of ['jarra llena', 'carretera estrecha', 'naranja madura']) {
+      expect(detectLanguage(text).language, `"${text}"`).toBe('es');
     }
   });
 });

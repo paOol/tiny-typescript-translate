@@ -2,6 +2,7 @@ import { LANGUAGES, type Language } from './languages.js';
 import { DetectionError } from './errors.js';
 import {
   ENGLISH_STOPWORDS,
+  ENGLISH_COLLOQUIAL_FOLDED,
   SPANISH_CHARS,
   SPANISH_STOPWORDS_FOLDED,
   SPANISH_CONTENT_FOLDED,
@@ -37,6 +38,14 @@ const W_ACCENT = 2; // weight per Spanish-specific char (ñ, ¿, accented vowels
 const W_FUNC = 1; // weight per function-word hit
 const W_CONTENT = 1; // weight per content-word hit
 
+// English-evidence weight per recognized colloquial token (slang / gaming /
+// chat abbreviation; see ENGLISH_COLLOQUIAL_FOLDED). DECISIVE on purpose — set
+// equal to W_ACCENT (the strongest Spanish per-token signal) so one recognized
+// English slang token outweighs one lone, ambiguous Spanish stopword. This is
+// what flips `sus` (also Spanish "their"), `no cap` and `sus imposter` back to
+// English without any trigram involvement. Invariant: W_FUNC <= W_EN_SLANG.
+const W_EN_SLANG = 2; // weight per English colloquial-token hit
+
 // Trigram tiebreak thresholds — TUNED in Task 3.1.
 //
 // Task 2.1's EN trigram profile was rebuilt to add real running-text English
@@ -62,6 +71,28 @@ const TIE_MARGIN = 0; // tuned: only consult trigrams on an exact lexical tie (e
 const TRIGRAM_CONF_MIN = 0.55; // floor: a barely-decisive trigram lean (|t| just past the margin)
 const TRIGRAM_CONF_MAX = 0.8; // ceiling: a strongly-decisive trigram lean (large |t|)
 
+// Trigram Spanish-flip guard (H2) — reduces English→Spanish false positives on
+// internet slang, gaming terms and short common-English fragments that have NO
+// lexical evidence and so reach the trigram tiebreak. The trigram model reads
+// short English chat tokens (`imo`, `bro`, `camp`, `ez`…) as Spanish because
+// clusters like `us `/`ta `/`que`/`est` are Spanish-skewed. We therefore allow
+// a trigram-only result to flip to SPANISH only when the fragment looks like it
+// could plausibly BE Spanish:
+//
+//   • at least MIN_ES_FLIP_LETTERS folded letters — suppresses ultra-short slang
+//     noise. Safe floor: every genuine out-of-lexicon Spanish fragment in the
+//     corpus (`es-trigram-novel`) is ≥ 10 letters, leaving a ≥ 2-letter buffer.
+//   • no `k`/`w` — letters near-absent in native Spanish but common in English /
+//     loanword slang (`wtf`, `kek`, `owned`, `webcam`…); a forward-looking net
+//     for novel slang not in the colloquial lexicon.
+//
+// CRITICAL: this gates ONLY the Spanish-flip direction. English trigram flips
+// and the entire lexical path are untouched — the failure mode is strictly
+// English→Spanish, so the guard is monotone toward English and cannot regress
+// any genuine English case.
+const MIN_ES_FLIP_LETTERS = 8;
+const NON_SPANISH_LETTERS = /[kw]/; // k/w essentially never occur in native Spanish
+
 const HANGUL_RE = /\p{Script=Hangul}/gu;
 const HAN_RE = /\p{Script=Han}/gu;
 const LATIN_RE = /\p{Script=Latin}/gu;
@@ -69,6 +100,20 @@ const LATIN_WORD_RE = /[\p{Script=Latin}]+/gu;
 
 const countMatches = (text: string, re: RegExp): number =>
   (text.match(re) ?? []).length;
+
+/**
+ * H2 guard: may a trigram-ONLY result flip to Spanish? Returns `false` for
+ * fragments too short, or carrying `k`/`w`, to plausibly be native Spanish —
+ * which keeps English the default for short slang / gaming / chat fragments that
+ * have no lexical evidence. Pure; `folded` is the already-folded input.
+ *
+ * Gates only the es-flip direction (see {@link MIN_ES_FLIP_LETTERS}); English
+ * trigram flips are never gated.
+ */
+const spanishFlipAllowed = (folded: string): boolean => {
+  const letters = folded.replace(/[^a-z]/g, '');
+  return letters.length >= MIN_ES_FLIP_LETTERS && !NON_SPANISH_LETTERS.test(letters);
+};
 
 /**
  * Distinguish Spanish from English within Latin-script text using a layered,
@@ -85,7 +130,14 @@ const countMatches = (text: string, re: RegExp): number =>
  * 4. A character-TRIGRAM tiebreak ({@link trigramScore}), consulted ONLY when
  *    there is no lexical evidence or an exact lexical tie. This classifies novel
  *    accent-free Spanish fragments built from words in no list (e.g.
- *    `carretera estrecha`); English stays the default on a genuine tie.
+ *    `carretera estrecha`); English stays the default on a genuine tie. The
+ *    Spanish-flip direction is additionally guarded by {@link spanishFlipAllowed}
+ *    so short / `k`·`w`-bearing English slang cannot be read as Spanish.
+ *
+ * On the English side, a folded ENGLISH COLLOQUIAL lexicon (slang, gaming terms,
+ * chat abbreviations — `ENGLISH_COLLOQUIAL_FOLDED`) supplies decisive English
+ * evidence (weight `W_EN_SLANG`), so internet slang and short English fragments
+ * are not misread as Spanish (e.g. `sus`, `no cap`, `vibe`, `side quest`).
  *
  * @returns the share of evidence pointing at each language (each in `[0, 1]`,
  *   together summing to 1). A trigram-only (tiebreak) decision carries a modest
@@ -103,6 +155,7 @@ const classifyLatin = (text: string): { es: number; en: number } => {
   let esFunc = 0;
   let enFunc = 0;
   let esContent = 0;
+  let enSlang = 0;
   for (const token of tokens) {
     const f = fold(token);
     if (SPANISH_STOPWORDS_FOLDED.has(f)) esFunc += 1;
@@ -110,10 +163,14 @@ const classifyLatin = (text: string): { es: number; en: number } => {
     // folded token is correct and equivalent to the previous lowercased match.
     if (ENGLISH_STOPWORDS.has(f)) enFunc += 1;
     if (SPANISH_CONTENT_FOLDED.has(f)) esContent += 1;
+    // English colloquial (slang / gaming / abbreviation) hit — decisive English
+    // evidence (H1). Counted independently of the stopword check so a token that
+    // is both a Spanish stopword and English slang (e.g. `sus`) nets English.
+    if (ENGLISH_COLLOQUIAL_FOLDED.has(f)) enSlang += 1;
   }
 
   const esRaw = accent * W_ACCENT + esFunc * W_FUNC + esContent * W_CONTENT;
-  const enRaw = enFunc * W_FUNC;
+  const enRaw = enFunc * W_FUNC + enSlang * W_EN_SLANG;
 
   const total = esRaw + enRaw;
 
@@ -141,10 +198,12 @@ const classifyLatin = (text: string): { es: number; en: number } => {
   };
 
   if (total === 0) {
-    // No accent chars and no function/content-word hits: consult the trigram
-    // tiebreak. A decisive lean flips off the conventional English default.
+    // No accent chars and no function/content/slang-word hits: consult the
+    // trigram tiebreak. A decisive lean flips off the conventional English
+    // default — but a Spanish flip is allowed only when the fragment could
+    // plausibly be Spanish (H2 guard); short slang/abbreviations stay English.
     const t = trigramScore(folded);
-    if (t > TRIGRAM_MARGIN) return trigramConfidenceSplit(t);
+    if (t > TRIGRAM_MARGIN && spanishFlipAllowed(folded)) return trigramConfidenceSplit(t);
     if (t < -TRIGRAM_MARGIN) return trigramConfidenceSplit(t);
     return { es: 0, en: 1 }; // genuine tie / no signal: English default (unchanged)
   }
@@ -152,9 +211,10 @@ const classifyLatin = (text: string): { es: number; en: number } => {
   // Lexical evidence exists but is an exact/near tie → consult trigram as a
   // tiebreak. With TIE_MARGIN = 0 this only fires when esRaw === enRaw (the
   // ambiguous one-es + one-en case); a CLEAR lexical margin is never overridden.
+  // The same H2 guard applies to the Spanish-flip direction.
   if (Math.abs(esRaw - enRaw) <= TIE_MARGIN) {
     const t = trigramScore(folded);
-    if (t > TRIGRAM_MARGIN) return trigramConfidenceSplit(t);
+    if (t > TRIGRAM_MARGIN && spanishFlipAllowed(folded)) return trigramConfidenceSplit(t);
     if (t < -TRIGRAM_MARGIN) return trigramConfidenceSplit(t);
     // else fall through to the normalized lexical split below
   }

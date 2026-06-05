@@ -95,3 +95,51 @@ export const SPANISH_CONTENT_FOLDED: ReadonlySet<string> = new Set([
   // Note: `radio`/`video`/`hotel`/`animal`/`real`/`final`/`mango`/`mar` etc.
   // are deliberately omitted — their folded forms are common English words.
 ]);
+
+/**
+ * Curated English COLLOQUIAL lexicon: internet slang, gaming terms, chat
+ * abbreviations, and the few short everyday English words the function-word
+ * list omits (notably `side`/`quest`). Stored accent-folded — English has no
+ * diacritics, so each entry is plain lowercase ASCII.
+ *
+ * Why this exists: Latin-script slang and short English fragments carry no
+ * Spanish/English function or content word, so they fall into `classifyLatin`'s
+ * character-trigram tiebreak — which leans Spanish on English chat shapes
+ * (`vibe`, `imo`, `bro`, `side quest`, …). Matching a token here adds DECISIVE
+ * English evidence (weighted `W_EN_SLANG` in `detect.ts`), so a recognized slang
+ * token outweighs a lone ambiguous Spanish stopword and never reaches trigrams.
+ *
+ * Curation rule (mirror of the {@link SPANISH_CONTENT_FOLDED} rule): every entry
+ * MUST NOT be a common Spanish word, so adding it can never make genuine Spanish
+ * text read English. Excluded as Spanish-ambiguous: `meta` (Sp. "goal"), `como`,
+ * `son`, `red`, `real`, `final`, `total`, `normal`, `sol`, `mar`, `ser`, `ir`,
+ * `van`, `ten`, `una`, `uno`, `vista`, `radio`, `video`, `animal`, `error`,
+ * `hotel`, and every Spanish stopword (`ya`, `tu`, `mi`, `si`, `no`, `se`…).
+ *
+ * Documented exception: `sus` is intentionally included even though it is also a
+ * Spanish possessive stopword — bare `sus` is overwhelmingly English/gaming
+ * slang ("suspicious"), while Spanish `sus` never stands alone (it precedes a
+ * noun). This single overlap is asserted in `test/detect-data.test.ts`.
+ */
+export const ENGLISH_COLLOQUIAL_FOLDED: ReadonlySet<string> = new Set([
+  // chat / text abbreviations
+  'lol', 'lmao', 'rofl', 'lmfao', 'omg', 'wtf', 'brb', 'afk', 'irl', 'imo',
+  'imho', 'tbh', 'ngl', 'idk', 'idc', 'smh', 'fyi', 'btw', 'ttyl', 'gtg',
+  'nvm', 'wyd', 'hbu', 'ily', 'jk', 'np', 'ty', 'thx', 'pls', 'plz', 'rn',
+  'fr', 'ong', 'istg', 'fomo', 'yolo', 'lmk', 'iykyk', 'ikr', 'wbu',
+  // reaction / descriptor slang
+  'deadass', 'periodt', 'lowkey', 'highkey', 'bet', 'cap', 'nocap', 'based',
+  'cringe', 'sus', 'simp', 'stan', 'salty', 'savage', 'ghosted', 'flex',
+  'vibe', 'vibes', 'mood', 'slay', 'bussin', 'mid', 'rizz', 'sigma', 'npc',
+  'cope', 'seethe', 'mald', 'kek', 'pog', 'poggers', 'pogchamp', 'sheesh',
+  'yikes', 'bruh', 'bro', 'fam', 'homie', 'bestie', 'goated', 'goat', 'dub',
+  'yeet', 'yoink', 'oof', 'drip', 'banger', 'slaps', 'cracked', 'gigachad',
+  // gaming terms
+  'ez', 'gg', 'ggwp', 'ggez', 'noob', 'pwned', 'owned', 'rekt', 'clutch',
+  'smurf', 'tryhard', 'sweaty', 'sweat', 'gamer', 'frag', 'respawn', 'buff',
+  'nerf', 'op', 'aggro', 'gank', 'headshot', 'whiff', 'hardstuck', 'boosted',
+  'inting', 'feeding', 'diff', 'washed', 'ranked', 'unranked', 'lobby',
+  'queue', 'lag', 'ping', 'copium', 'hopium', 'eco', 'wp',
+  // short ordinary-English words the stopword list omits (NOT Spanish-colliding)
+  'side', 'quest', 'talk',
+]);

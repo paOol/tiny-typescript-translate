@@ -222,6 +222,7 @@ Tiny, **zero-infrastructure** language detection and translation for headless No
   2. **Accent-folded function words** — folding (Unicode `NFD`, strip diacritics, lowercase, `ñ → n`) means an accent-stripped Spanish sentence still matches its stopwords.
   3. A folded **content-word lexicon** of high-frequency Spanish words, curated to avoid common-English collisions — catches short fragments like `buenos dias` or `gracias amigo`.
   4. A **character-trigram tiebreak** (Cavnar–Trenkle style), used only when there's no lexical evidence or an exact tie — classifies novel accent-free Spanish like `carretera estrecha`. English stays the default on a genuine tie.
+  5. An **English colloquial lexicon** (internet slang, gaming terms, chat abbreviations) plus a short-fragment guard, so English chat text like `sus`, `no cap`, `gg ez`, `vibe` or `side quest` isn't misread as Spanish. The guard only restricts the Spanish-flip direction (a trigram-only fragment must be ≥ 8 letters and free of `k`/`w` to be called Spanish), so it can't regress genuine English.
 
 Trigram-only fragment calls carry a deliberately modest `confidence` (~0.55–0.8), distinguishing them from lexically-clear, high-confidence sentences. A one- or two-word fragment of words in no list and with a weak trigram signal may still fall back to English.
 
