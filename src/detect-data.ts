@@ -24,7 +24,20 @@ export const SPANISH_STOPWORDS: ReadonlySet<string> = new Set([
   'otra', 'otros', 'otras',
 ]);
 
-/** Common English function words. */
+/**
+ * Common English function words.
+ *
+ * Several entries (`a`, `me`, `no`, `as`) are deliberately ALSO Spanish
+ * stopwords — they are English↔Spanish HOMOGRAPHS. Listing them on both sides is
+ * intentional: `classifyLatin` counts the Spanish and English stopword sets
+ * independently, so a homograph token adds one point to EACH side and nets to
+ * zero evidence. That neutrality is the point — without it, an everyday English
+ * word that happens to be a Spanish stopword (e.g. `me`, `a`) becomes the only
+ * lexical hit in a short English sentence and forces a full-confidence Spanish
+ * call (`"Stop messaging me."`, `"Send me a message"`). Neutralized, such
+ * sentences fall through to the character-trigram tiebreak, which correctly
+ * leans English. Do NOT remove `a`/`me` here without restoring that guard.
+ */
 export const ENGLISH_STOPWORDS: ReadonlySet<string> = new Set([
   'the', 'of', 'and', 'to', 'in', 'is', 'it', 'you', 'that', 'he', 'she',
   'was', 'were', 'for', 'on', 'are', 'as', 'with', 'his', 'her', 'they',
@@ -35,6 +48,8 @@ export const ENGLISH_STOPWORDS: ReadonlySet<string> = new Set([
   'into', 'time', 'two', 'more', 'go', 'see', 'no', 'way', 'could', 'people',
   'my', 'than', 'been', 'who', 'now', 'its', 'did', 'get', 'come', 'made',
   'over', 'just', 'because', 'also', 'after', 'where', 'our',
+  // English↔Spanish homographs the base list omitted — see the doc-comment.
+  'a', 'me',
 ]);
 
 /**
@@ -92,6 +107,12 @@ export const SPANISH_CONTENT_FOLDED: ReadonlySet<string> = new Set([
   'zapato', 'zapatos', 'caballo', 'pajaro', 'lluvia', 'nube', 'gris', 'puerta',
   'cerrada', 'cerrado', 'redonda', 'redondo', 'camisa', 'roto', 'rota',
   'fuerte', 'escuela', 'familia', 'nombre', 'palabra',
+  // High-frequency Spanish verbs/adverb the lexicon omitted. Needed so an
+  // accent-stripped sentence built only from out-of-lexicon words plus the
+  // `a`/`me` homographs (now neutral) still carries real Spanish evidence
+  // instead of relying on the sub-margin trigram tiebreak — e.g.
+  // `Me gustaria aprender a escribir mejor codigo`. None collide with English.
+  'mejor', 'aprender', 'escribir',
   // Note: `radio`/`video`/`hotel`/`animal`/`real`/`final`/`mango`/`mar` etc.
   // are deliberately omitted — their folded forms are common English words.
 ]);

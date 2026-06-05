@@ -311,6 +311,40 @@ describe('trigram tiebreak', () => {
   });
 });
 
+describe('English↔Spanish homograph stopwords', () => {
+  // Regression for "Stop messaging me." → es @ 1.0. `me` (and `a`) are everyday
+  // English words that are ALSO Spanish stopwords. Before they were listed on
+  // the English side too, such a word was the ONLY lexical hit in a short
+  // English sentence and forced a full-confidence Spanish call. Now neutralized,
+  // these fall through to the trigram tiebreak and correctly read English.
+  it('detects short English sentences whose only stopword is a homograph', () => {
+    const cases = [
+      'Stop messaging me.',
+      'Send me a message',
+      'Give me a break',
+      'Send a message',
+      'Call me later',
+      'text me',
+    ];
+    for (const text of cases) {
+      expect(detectLanguage(text).language, `"${text}"`).toBe('en');
+    }
+  });
+
+  // The neutralization must NOT cost any genuine Spanish: real Spanish sentences
+  // carry other Spanish evidence beyond the homograph, so they stay Spanish.
+  it('still detects Spanish sentences containing the homographs', () => {
+    const cases = [
+      'Me gustaría aprender a escribir mejor código.',
+      'Dame un poco de agua, por favor.',
+      'Llámame mañana por la tarde.',
+    ];
+    for (const text of cases) {
+      expect(detectLanguage(text).language, `"${text}"`).toBe('es');
+    }
+  });
+});
+
 describe('slang false-positive guard', () => {
   const SLANG_KINDS = ['en-slang', 'en-gaming', 'en-short-fragment'] as const;
 

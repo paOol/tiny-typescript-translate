@@ -9,7 +9,20 @@
  */
 /** Common Spanish function words. */
 export declare const SPANISH_STOPWORDS: ReadonlySet<string>;
-/** Common English function words. */
+/**
+ * Common English function words.
+ *
+ * Several entries (`a`, `me`, `no`, `as`) are deliberately ALSO Spanish
+ * stopwords — they are English↔Spanish HOMOGRAPHS. Listing them on both sides is
+ * intentional: `classifyLatin` counts the Spanish and English stopword sets
+ * independently, so a homograph token adds one point to EACH side and nets to
+ * zero evidence. That neutrality is the point — without it, an everyday English
+ * word that happens to be a Spanish stopword (e.g. `me`, `a`) becomes the only
+ * lexical hit in a short English sentence and forces a full-confidence Spanish
+ * call (`"Stop messaging me."`, `"Send me a message"`). Neutralized, such
+ * sentences fall through to the character-trigram tiebreak, which correctly
+ * leans English. Do NOT remove `a`/`me` here without restoring that guard.
+ */
 export declare const ENGLISH_STOPWORDS: ReadonlySet<string>;
 /**
  * Characters that essentially never appear in English but are common in
