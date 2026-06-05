@@ -1,0 +1,73 @@
+{
+  "name": "tiny-typescript-translate",
+  "version": "0.1.0",
+  "description": "Tiny, zero-infrastructure language detection and translation for headless Node.js. Supports English, Spanish, Chinese and Korean.",
+  "keywords": [
+    "translate",
+    "translation",
+    "language-detection",
+    "language-detect",
+    "i18n",
+    "nlp",
+    "transformers",
+    "offline",
+    "headless",
+    "english",
+    "spanish",
+    "chinese",
+    "korean"
+  ],
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "sideEffects": false,
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "build:trigrams": "tsx scripts/build-trigrams.ts",
+    "clean": "rm -rf dist",
+    "prebuild": "npm run clean",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:integration": "TTT_INTEGRATION=1 vitest run",
+    "prepublishOnly": "npm run build"
+  },
+  "peerDependencies": {
+    "@huggingface/transformers": ">=3.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@huggingface/transformers": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  },
+  "license": "MIT",
+  "author": "paOol",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/paOol/tiny-typescript-translate.git"
+  },
+  "homepage": "https://github.com/paOol/tiny-typescript-translate#readme",
+  "bugs": {
+    "url": "https://github.com/paOol/tiny-typescript-translate/issues"
+  }
+}

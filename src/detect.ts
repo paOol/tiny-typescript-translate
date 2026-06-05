@@ -1,0 +1,243 @@
+import { LANGUAGES, type Language } from './languages.js';
+import { DetectionError } from './errors.js';
+import {
+  ENGLISH_STOPWORDS,
+  SPANISH_CHARS,
+  SPANISH_STOPWORDS_FOLDED,
+  SPANISH_CONTENT_FOLDED,
+} from './detect-data.js';
+import { fold } from './text-utils.js';
+import { trigramScore } from './detect-trigrams.js';
+
+/** The result of a language-detection call. */
+export interface DetectionResult {
+  /** The most likely language. */
+  language: Language;
+  /** Confidence in `language`, from 0 (uncertain) to 1 (certain). */
+  confidence: number;
+  /**
+   * Normalized score for every supported language. Scores sum to ~1, so they
+   * can be read as rough probabilities.
+   */
+  scores: Record<Language, number>;
+}
+
+/**
+ * Phase-1 scoring weights for the Spanish/English sub-classifier — TUNED in
+ * Task 3.1 by sweeping against the shipped CORPUS plus a set of genuine
+ * out-of-lexicon Spanish fragments, subject to zero English→Spanish flips on
+ * the en-control gate. Ordering invariant: `W_FUNC <= W_CONTENT <= W_ACCENT`.
+ *
+ * The sweep ({W_ACCENT∈2,3}, {W_CONTENT∈1,2}, W_FUNC=1) found these weights
+ * accuracy-neutral on the corpus (a Spanish-specific char or content-word hit
+ * already decides the fragment regardless of the exact multiplier), so we keep
+ * the minimal values that satisfy the ordering invariant.
+ */
+const W_ACCENT = 2; // weight per Spanish-specific char (ñ, ¿, accented vowels…)
+const W_FUNC = 1; // weight per function-word hit
+const W_CONTENT = 1; // weight per content-word hit
+
+// Trigram tiebreak thresholds — TUNED in Task 3.1.
+//
+// Task 2.1's EN trigram profile was rebuilt to add real running-text English
+// frequencies (-ar/-ed/-ing/-ly/-s endings and common content words), which
+// dropped the en-control "red car" trigram score from +0.67 to -0.65. The new
+// binding en-control case is "quick test" at +0.337, so the lowest flat margin
+// that holds the hard "zero English→Spanish flips" gate is just above 0.337.
+// 0.35 sits just over that worst en-control score (small safety buffer) and was
+// the accuracy-maximizing choice in the sweep: corpus 48/48 with 12/14 of the
+// genuine out-of-lexicon Spanish fragments recovered (only two scoring < 0.337
+// stay English — unrecoverable by a flat margin without flipping "quick test").
+const TRIGRAM_MARGIN = 0.35; // tuned: just above worst en-control "quick test" (+0.337)
+const TIE_MARGIN = 0; // tuned: only consult trigrams on an exact lexical tie (esRaw === enRaw)
+
+// Confidence band for trigram-only decisions (the tiebreak branches).
+//
+// A trigram-only call is a WEAK signal: there is no lexical (function-word /
+// accent / content-word) evidence, only character-shape statistics. So its
+// confidence is deliberately squashed into this modest band, well below the
+// near-1.0 confidence a function-word-rich full sentence gets from the
+// normalized lexical split. Callers can therefore tell a weak fragment call
+// apart from a strong full-sentence call by inspecting `confidence`.
+const TRIGRAM_CONF_MIN = 0.55; // floor: a barely-decisive trigram lean (|t| just past the margin)
+const TRIGRAM_CONF_MAX = 0.8; // ceiling: a strongly-decisive trigram lean (large |t|)
+
+const HANGUL_RE = /\p{Script=Hangul}/gu;
+const HAN_RE = /\p{Script=Han}/gu;
+const LATIN_RE = /\p{Script=Latin}/gu;
+const LATIN_WORD_RE = /[\p{Script=Latin}]+/gu;
+
+const countMatches = (text: string, re: RegExp): number =>
+  (text.match(re) ?? []).length;
+
+/**
+ * Distinguish Spanish from English within Latin-script text using a layered,
+ * fully offline signal stack, in order:
+ *
+ * 1. A Spanish-specific CHARACTER signal (`ñ`, `¿`, `¡`, accented vowels), read
+ *    on the RAW text before any folding (folding would strip these characters).
+ * 2. Accent-FOLDED FUNCTION-word matching (Spanish vs. English stopwords).
+ *    Folding (`NFD` + strip diacritics + lowercase, `ñ → n`) means an
+ *    accent-stripped Spanish sentence still matches its stopwords.
+ * 3. A FOLDED Spanish CONTENT-word lexicon (high-frequency content words,
+ *    curated to avoid common-English collisions) — this catches short
+ *    accent-free fragments like `buenos dias` or `gracias amigo`.
+ * 4. A character-TRIGRAM tiebreak ({@link trigramScore}), consulted ONLY when
+ *    there is no lexical evidence or an exact lexical tie. This classifies novel
+ *    accent-free Spanish fragments built from words in no list (e.g.
+ *    `carretera estrecha`); English stays the default on a genuine tie.
+ *
+ * @returns the share of evidence pointing at each language (each in `[0, 1]`,
+ *   together summing to 1). A trigram-only (tiebreak) decision carries a modest
+ *   split (see `TRIGRAM_CONF_*`); lexically-clear text leans hard one way.
+ */
+const classifyLatin = (text: string): { es: number; en: number } => {
+  // Accent signal must be read from the RAW text: folding strips ñ/accents,
+  // which would destroy the very characters that make this a Spanish signal.
+  const accent = countMatches(text, SPANISH_CHARS);
+
+  // Tokenize the raw text (LATIN_WORD_RE matches Latin-script runs, accents and
+  // case included), then fold each token before matching the folded word sets.
+  const tokens = text.match(LATIN_WORD_RE) ?? [];
+
+  let esFunc = 0;
+  let enFunc = 0;
+  let esContent = 0;
+  for (const token of tokens) {
+    const f = fold(token);
+    if (SPANISH_STOPWORDS_FOLDED.has(f)) esFunc += 1;
+    // ENGLISH_STOPWORDS is already lowercase/diacritic-free, so matching the
+    // folded token is correct and equivalent to the previous lowercased match.
+    if (ENGLISH_STOPWORDS.has(f)) enFunc += 1;
+    if (SPANISH_CONTENT_FOLDED.has(f)) esContent += 1;
+  }
+
+  const esRaw = accent * W_ACCENT + esFunc * W_FUNC + esContent * W_CONTENT;
+  const enRaw = enFunc * W_FUNC;
+
+  const total = esRaw + enRaw;
+
+  // Fold the whole string once for the trigram path. `trigramScore` re-tokenizes
+  // internally, so folding the entire string here is correct and avoids a second
+  // fold pass. Available to both the zero-evidence and near-tie branches below.
+  const folded = fold(text);
+
+  // Map a decisive trigram score to a leaning split with a BOUNDED confidence.
+  //
+  // On the decisive branches `|t|` is always > TRIGRAM_MARGIN. We squash the
+  // distance past the margin smoothly and monotonically into the modest band
+  // [TRIGRAM_CONF_MIN, TRIGRAM_CONF_MAX]. The chosen squash is the saturating
+  // exponential `1 - e^(-2·x)`: it is pure & deterministic (no Date/random),
+  // 0 at the margin, monotonically increasing, and bounded in [0, 1) — so a
+  // barely-decisive lean lands near MIN and a strongly-decisive one approaches
+  // (but never exceeds) MAX. This keeps trigram-only confidence modest while
+  // preserving "stronger trigram evidence ⇒ higher confidence" ordering.
+  const trigramConfidenceSplit = (t: number): { es: number; en: number } => {
+    const mag = Math.abs(t);
+    const x = Math.max(0, mag - TRIGRAM_MARGIN); // distance past the margin
+    const k = 1 - Math.exp(-x * 2); // 0 at margin → →1 as mag grows (bounded, smooth)
+    const conf = TRIGRAM_CONF_MIN + (TRIGRAM_CONF_MAX - TRIGRAM_CONF_MIN) * k;
+    return t > 0 ? { es: conf, en: 1 - conf } : { es: 1 - conf, en: conf };
+  };
+
+  if (total === 0) {
+    // No accent chars and no function/content-word hits: consult the trigram
+    // tiebreak. A decisive lean flips off the conventional English default.
+    const t = trigramScore(folded);
+    if (t > TRIGRAM_MARGIN) return trigramConfidenceSplit(t);
+    if (t < -TRIGRAM_MARGIN) return trigramConfidenceSplit(t);
+    return { es: 0, en: 1 }; // genuine tie / no signal: English default (unchanged)
+  }
+
+  // Lexical evidence exists but is an exact/near tie → consult trigram as a
+  // tiebreak. With TIE_MARGIN = 0 this only fires when esRaw === enRaw (the
+  // ambiguous one-es + one-en case); a CLEAR lexical margin is never overridden.
+  if (Math.abs(esRaw - enRaw) <= TIE_MARGIN) {
+    const t = trigramScore(folded);
+    if (t > TRIGRAM_MARGIN) return trigramConfidenceSplit(t);
+    if (t < -TRIGRAM_MARGIN) return trigramConfidenceSplit(t);
+    // else fall through to the normalized lexical split below
+  }
+
+  return { es: esRaw / total, en: enRaw / total };
+};
+
+const emptyScores = (): Record<Language, number> => ({
+  en: 0,
+  es: 0,
+  zh: 0,
+  ko: 0,
+});
+
+/**
+ * Detect which supported language a piece of text is written in.
+ *
+ * Detection is fully offline, synchronous, dependency-free and deterministic.
+ * Chinese and Korean are identified purely by Unicode script. Spanish and
+ * English (which share the Latin alphabet) are separated by a layered pipeline:
+ * Spanish-specific characters, accent-FOLDED function-word matching (so an
+ * accent-stripped Spanish sentence still matches its stopwords), a folded
+ * Spanish content-word lexicon, and a character-trigram tiebreak for novel
+ * accent-free fragments (see {@link classifyLatin}).
+ *
+ * Accuracy is highest on a full sentence or more, but many very short
+ * accent-free Spanish fragments are now handled too. Trigram-only fragment
+ * calls carry a modest `confidence` (~0.55–0.8); a one- or two-word fragment of
+ * words in no list with a weak trigram signal may still fall back to English.
+ *
+ * @param text - the text to analyze.
+ * @throws {@link DetectionError} if `text` is not a non-empty string.
+ *
+ * @example
+ * ```ts
+ * detectLanguage('The quick brown fox').language; // 'en'
+ * detectLanguage('El zorro marrón rápido').language; // 'es'
+ * detectLanguage('敏捷的棕色狐狸').language; // 'zh'
+ * detectLanguage('빠른 갈색 여우').language; // 'ko'
+ * ```
+ */
+export const detectLanguage = (text: string): DetectionResult => {
+  if (typeof text !== 'string') {
+    throw new DetectionError('detectLanguage expects a string.');
+  }
+  if (text.trim().length === 0) {
+    throw new DetectionError('Cannot detect the language of empty text.');
+  }
+
+  const hangul = countMatches(text, HANGUL_RE);
+  const han = countMatches(text, HAN_RE);
+  const latin = countMatches(text, LATIN_RE);
+
+  const { es: pEs, en: pEn } = latin > 0 ? classifyLatin(text) : { es: 0, en: 0 };
+
+  const weights: Record<Language, number> = {
+    ko: hangul,
+    zh: han,
+    es: latin * pEs,
+    en: latin * pEn,
+  };
+
+  const total = weights.ko + weights.zh + weights.es + weights.en;
+  if (total === 0) {
+    // No letters in any supported script (digits, punctuation, emoji…).
+    return { language: 'en', confidence: 0, scores: emptyScores() };
+  }
+
+  const scores: Record<Language, number> = {
+    en: weights.en / total,
+    es: weights.es / total,
+    zh: weights.zh / total,
+    ko: weights.ko / total,
+  };
+
+  let language: Language = 'en';
+  let best = -1;
+  for (const lang of LANGUAGES) {
+    if (scores[lang] > best) {
+      best = scores[lang];
+      language = lang;
+    }
+  }
+
+  return { language, confidence: scores[language], scores };
+};
