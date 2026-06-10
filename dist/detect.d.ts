@@ -22,6 +22,11 @@ export interface DetectionResult {
  * Spanish content-word lexicon, and a character-trigram tiebreak for novel
  * accent-free fragments (see {@link classifyLatin}).
  *
+ * Non-linguistic spans — URLs, emails, @handles, bare domains — are stripped
+ * before scoring, so e.g. a Reddit URL containing `/r/VideosAmazing` cannot be
+ * read as Spanish. Input that is ONLY such spans returns the no-signal result
+ * (`en` with `confidence: 0`).
+ *
  * Accuracy is highest on a full sentence or more, but many very short
  * accent-free Spanish fragments are now handled too. Trigram-only fragment
  * calls carry a modest `confidence` (~0.55–0.8); a one- or two-word fragment of

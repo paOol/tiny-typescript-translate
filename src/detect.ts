@@ -8,6 +8,7 @@ import {
   SPANISH_CONTENT_FOLDED,
 } from './detect-data.js';
 import { fold } from './text-utils.js';
+import { stripNonLinguistic } from './non-linguistic.js';
 import { trigramScore } from './detect-trigrams.js';
 
 /** The result of a language-detection call. */
@@ -240,6 +241,11 @@ const emptyScores = (): Record<Language, number> => ({
  * Spanish content-word lexicon, and a character-trigram tiebreak for novel
  * accent-free fragments (see {@link classifyLatin}).
  *
+ * Non-linguistic spans — URLs, emails, @handles, bare domains — are stripped
+ * before scoring, so e.g. a Reddit URL containing `/r/VideosAmazing` cannot be
+ * read as Spanish. Input that is ONLY such spans returns the no-signal result
+ * (`en` with `confidence: 0`).
+ *
  * Accuracy is highest on a full sentence or more, but many very short
  * accent-free Spanish fragments are now handled too. Trigram-only fragment
  * calls carry a modest `confidence` (~0.55–0.8); a one- or two-word fragment of
@@ -264,11 +270,18 @@ export const detectLanguage = (text: string): DetectionResult => {
     throw new DetectionError('Cannot detect the language of empty text.');
   }
 
-  const hangul = countMatches(text, HANGUL_RE);
-  const han = countMatches(text, HAN_RE);
-  const latin = countMatches(text, LATIN_RE);
+  // Score only the LINGUISTIC content: URLs, emails and @handles carry no
+  // language signal, and tokens inside them (`/r/VideosAmazing` → `videos`)
+  // would otherwise hit a lexicon and skew the result. A purely non-linguistic
+  // input therefore falls through to the no-signal branch below (en, conf 0).
+  const linguistic = stripNonLinguistic(text);
 
-  const { es: pEs, en: pEn } = latin > 0 ? classifyLatin(text) : { es: 0, en: 0 };
+  const hangul = countMatches(linguistic, HANGUL_RE);
+  const han = countMatches(linguistic, HAN_RE);
+  const latin = countMatches(linguistic, LATIN_RE);
+
+  const { es: pEs, en: pEn } =
+    latin > 0 ? classifyLatin(linguistic) : { es: 0, en: 0 };
 
   const weights: Record<Language, number> = {
     ko: hangul,
@@ -279,7 +292,8 @@ export const detectLanguage = (text: string): DetectionResult => {
 
   const total = weights.ko + weights.zh + weights.es + weights.en;
   if (total === 0) {
-    // No letters in any supported script (digits, punctuation, emoji…).
+    // No linguistic letters in any supported script (digits, punctuation,
+    // emoji, or nothing but URLs / emails / @handles).
     return { language: 'en', confidence: 0, scores: emptyScores() };
   }
 

@@ -58,6 +58,11 @@ export declare class Translator {
      * automatically unless `options.from` is given. If the resolved source and
      * target are the same, the input is returned unchanged.
      *
+     * Non-linguistic spans — URLs, emails, @handles, bare domains — are never
+     * sent to the model: they are reattached verbatim around the translated
+     * prose. Input with no linguistic content at all (a bare URL, an email
+     * address, digits/emoji) is returned unchanged without invoking the backend.
+     *
      * @throws {@link UnsupportedLanguageError} for an unsupported `to`/`from`.
      */
     translate(text: string, options: TranslateOptions): Promise<string>;

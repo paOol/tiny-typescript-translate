@@ -113,6 +113,81 @@ describe('Translator', () => {
   });
 });
 
+describe('non-linguistic content', () => {
+  // Regression: this URL was detected as Spanish (via `videos` in the path)
+  // and sent to the model, which mangled it.
+  it('returns a bare URL unchanged without invoking the backend', async () => {
+    const backend = new FakeBackend();
+    const translator = new Translator({ backend });
+    const url = 'https://www.reddit.com/r/VideosAmazing/s/XSDSHe9J0O';
+
+    expect(await translator.translate(url, { to: 'es' })).toBe(url);
+    expect(backend.calls).toHaveLength(0);
+  });
+
+  it('returns a bare email address unchanged without invoking the backend', async () => {
+    const backend = new FakeBackend();
+    const translator = new Translator({ backend });
+
+    expect(await translator.translate('paoolkim@gmail.com', { to: 'es' })).toBe(
+      'paoolkim@gmail.com',
+    );
+    expect(backend.calls).toHaveLength(0);
+  });
+
+  it('returns digits/emoji-only input unchanged without invoking the backend', async () => {
+    const backend = new FakeBackend();
+    const translator = new Translator({ backend });
+
+    expect(await translator.translate('1234 !!! 🎉', { to: 'es' })).toBe(
+      '1234 !!! 🎉',
+    );
+    expect(backend.calls).toHaveLength(0);
+  });
+
+  it('passes a URL through verbatim and translates only the prose around it', async () => {
+    const backend = new FakeBackend();
+    const translator = new Translator({ backend });
+    const url = 'https://www.reddit.com/r/VideosAmazing/s/XSDSHe9J0O';
+
+    const out = await translator.translate(`check this out ${url} please`, {
+      to: 'es',
+    });
+
+    expect(out).toBe(`[en->es] check this out ${url} [en->es] please`);
+    expect(backend.calls.map((c) => c.text)).toEqual([
+      'check this out',
+      'please',
+    ]);
+  });
+
+  it('passes an email through verbatim inside a sentence', async () => {
+    const backend = new FakeBackend();
+    const translator = new Translator({ backend });
+
+    const out = await translator.translate('email me at paoolkim@gmail.com today!', {
+      from: 'en',
+      to: 'es',
+    });
+
+    expect(out).toBe('[en->es] email me at paoolkim@gmail.com [en->es] today!');
+    expect(backend.calls.map((c) => c.text)).toEqual(['email me at', 'today!']);
+  });
+
+  it('makes a single whole-text backend call when no spans are present', async () => {
+    const backend = new FakeBackend();
+    const translator = new Translator({ backend });
+
+    await translator.translate('The weather is nice today and I am happy.', {
+      to: 'es',
+    });
+
+    expect(backend.calls.map((c) => c.text)).toEqual([
+      'The weather is nice today and I am happy.',
+    ]);
+  });
+});
+
 describe('translate() convenience', () => {
   it('uses the shared default backend', async () => {
     const backend = new FakeBackend();

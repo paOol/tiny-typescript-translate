@@ -90,12 +90,15 @@ interface TranslateOptions {
 }
 ```
 
-| Case                       | Behavior                          |
-| -------------------------- | --------------------------------- |
-| `from` omitted / `'auto'`  | source is detected from `text`    |
-| resolved source === target | input returned unchanged          |
-| empty input                | returns `''` (model never loads)  |
-| unknown language code      | throws `UnsupportedLanguageError` |
+| Case                                | Behavior                                     |
+| ----------------------------------- | -------------------------------------------- |
+| `from` omitted / `'auto'`           | source is detected from `text`               |
+| resolved source === target          | input returned unchanged                     |
+| empty input                         | returns `''` (model never loads)             |
+| only URLs / emails / digits / emoji | input returned unchanged (model never loads) |
+| unknown language code               | throws `UnsupportedLanguageError`            |
+
+**URLs, emails and @handles are never translated.** They're passed through verbatim — only the prose around them is sent to the model — so links and addresses survive translation intact.
 
 For repeated calls, prefer a `Translator` (loads the model once).
 
@@ -223,6 +226,8 @@ Tiny, **zero-infrastructure** language detection and translation for headless No
   3. A folded **content-word lexicon** of high-frequency Spanish words, curated to avoid common-English collisions — catches short fragments like `buenos dias` or `gracias amigo`.
   4. A **character-trigram tiebreak** (Cavnar–Trenkle style), used only when there's no lexical evidence or an exact tie — classifies novel accent-free Spanish like `carretera estrecha`. English stays the default on a genuine tie.
   5. An **English colloquial lexicon** (internet slang, gaming terms, chat abbreviations) plus a short-fragment guard, so English chat text like `sus`, `no cap`, `gg ez`, `vibe` or `side quest` isn't misread as Spanish. The guard only restricts the Spanish-flip direction (a trigram-only fragment must be ≥ 8 letters and free of `k`/`w` to be called Spanish), so it can't regress genuine English.
+
+**Non-linguistic spans** — URLs, emails, @handles, bare domains — are stripped before any scoring, so words embedded in a link (e.g. `videos` inside `reddit.com/r/VideosAmazing/…`) can't skew the result. Input that is _only_ such spans returns the no-signal result (`en` with `confidence: 0`).
 
 Trigram-only fragment calls carry a deliberately modest `confidence` (~0.55–0.8), distinguishing them from lexically-clear, high-confidence sentences. A one- or two-word fragment of words in no list and with a weak trigram signal may still fall back to English.
 

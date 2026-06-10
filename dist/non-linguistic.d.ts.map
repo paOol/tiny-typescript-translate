@@ -1,0 +1,1 @@
+{"version":3,"file":"non-linguistic.d.ts","sourceRoot":"","sources":["../src/non-linguistic.ts"],"names":[],"mappings":"AAAA;;;;;;;;;;;GAWG;AAyBH,2EAA2E;AAC3E,MAAM,WAAW,WAAW;IAC1B,IAAI,EAAE,MAAM,CAAC;IACb,6EAA6E;IAC7E,YAAY,EAAE,OAAO,CAAC;CACvB;AAED;;;;GAIG;AACH,eAAO,MAAM,WAAW,GAAI,MAAM,MAAM,KAAG,WAAW,EAgBrD,CAAC;AAEF;;;;GAIG;AACH,eAAO,MAAM,kBAAkB,GAAI,MAAM,MAAM,KAAG,MAGrC,CAAC"}

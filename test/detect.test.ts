@@ -92,6 +92,47 @@ describe('detectLanguage', () => {
   });
 });
 
+describe('non-linguistic spans (URLs, emails, handles)', () => {
+  // Regression: this real Reddit URL detected as es @ 1.0 because the `videos`
+  // token inside `/r/VideosAmazing` hit the Spanish content-word lexicon.
+  it('returns the no-signal result for a bare URL', () => {
+    const result = detectLanguage(
+      'https://www.reddit.com/r/VideosAmazing/s/XSDSHe9J0O',
+    );
+    expect(result.language).toBe('en');
+    expect(result.confidence).toBe(0);
+  });
+
+  it('returns the no-signal result for a bare email address', () => {
+    const result = detectLanguage('maria.delgado@correo.es');
+    expect(result.language).toBe('en');
+    expect(result.confidence).toBe(0);
+  });
+
+  it('ignores a URL when classifying the surrounding English', () => {
+    const result = detectLanguage(
+      'check out this video https://www.reddit.com/r/VideosAmazing/s/XSDSHe9J0O',
+    );
+    expect(result.language).toBe('en');
+  });
+
+  it('ignores a URL when classifying the surrounding Spanish', () => {
+    const result = detectLanguage(
+      'mira este video que me gusta https://www.reddit.com/r/VideosAmazing/s/XSDSHe9J0O',
+    );
+    expect(result.language).toBe('es');
+  });
+
+  it('ignores email addresses and @handles in mixed text', () => {
+    expect(
+      detectLanguage('escríbeme a maria@correo.es cuando puedas').language,
+    ).toBe('es');
+    expect(detectLanguage('thanks @ElPerroGato for the link').language).toBe(
+      'en',
+    );
+  });
+});
+
 describe('accent-free fragments', () => {
   const KINDS: ReadonlyArray<CorpusKind> = [
     'es-accented',
